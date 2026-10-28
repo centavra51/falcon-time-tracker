@@ -1,0 +1,7 @@
+.venv
+.git
+.env
+.env.*
+__pycache__
+*.db*
+.vercel
