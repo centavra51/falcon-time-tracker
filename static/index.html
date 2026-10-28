@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Falcon Time Tracker</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .mono-timer {
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(1.15); }
+    }
+    .live-dot {
+      animation: pulse-dot 1.6s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navigation & Status Bar -->
+  <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-indigo-500 flex items-center justify-center font-bold text-lg shadow-sm">
+          ⏱
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base sm:text-lg tracking-tight">Falcon Time Tracker</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 font-medium">
+              Python + FastAPI
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">Employee Time Tracking System (Fictional Demo Data)</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <div id="backendStatusBadge" class="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+          <span id="backendStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="backendStatusText">Checking connection...</span>
+        </div>
+        <button id="btnResetDemo" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+          Refresh View Data
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Non-blocking Toast Notification -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 max-w-md hidden">
+    <div id="toastCard" class="rounded-xl shadow-lg border px-4 py-3 flex items-start gap-3 bg-white border-slate-200">
+      <span id="toastIcon" class="text-lg leading-none mt-0.5">ℹ️</span>
+      <div class="flex-1 text-xs sm:text-sm">
+        <p id="toastTitle" class="font-semibold text-slate-900">Notification</p>
+        <p id="toastMessage" class="text-slate-600 mt-0.5"></p>
+      </div>
+      <button id="btnCloseToast" type="button" class="text-slate-400 hover:text-slate-600 text-sm font-bold px-1">✕</button>
+    </div>
+  </div>
+
+  <!-- CSV Preview & Copy Modal -->
+  <div id="csvPreviewModal" class="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 id="csvModalTitle" class="text-sm sm:text-base font-bold text-slate-900">CSV Report Preview</h3>
+          <p id="csvModalSubtitle" class="text-xs text-slate-500 mt-0.5">The file has also been triggered for download in your browser (UTF-8 with BOM for Excel)</p>
+        </div>
+        <button id="btnCloseCsvModal" type="button" class="text-slate-400 hover:text-slate-700 text-sm font-bold px-2 py-1 rounded-lg">✕</button>
+      </div>
+      <div class="p-5 flex-1 overflow-y-auto space-y-3">
+        <textarea
+          id="csvPreviewTextarea"
+          readonly
+          rows="10"
+          class="w-full rounded-xl border border-slate-300 bg-slate-900 text-slate-100 font-mono text-xs p-3.5 focus:outline-none"
+        ></textarea>
+      </div>
+      <div class="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+        <span class="text-xs text-slate-500">Delimiter: comma (`,`), compatible with Microsoft Excel, Google Sheets &amp; LibreOffice Calc</span>
+        <div class="flex items-center gap-2">
+          <button id="btnCopyCsvContent" type="button" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shadow-sm">
+            📋 Copy CSV to Clipboard
+          </button>
+          <button id="btnCloseCsvModalFooter" type="button" class="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-medium transition">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Top KPI Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Employees</p>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statEmployeesCount" class="text-2xl font-bold text-slate-900">0</span>
+          <span id="statDepartmentsCountLabel" class="text-xs text-slate-400">active directory</span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Running Timers</p>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statActiveTimersCount" class="text-2xl font-bold text-emerald-600">0</span>
+          <span class="text-xs text-emerald-600 font-medium">live tracking</span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Entries in Period</p>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statPeriodEntries" class="text-2xl font-bold text-slate-900">0</span>
+          <span id="statPeriodRangeLabel" class="text-xs text-slate-400 truncate max-w-[150px]">all dates</span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Logged Time</p>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statGrandTotalTime" class="text-2xl font-bold text-indigo-600 mono-timer">00:00:00</span>
+          <span id="statActiveDeptBadge" class="text-xs text-slate-400">All Departments</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- One-Click Edge Case Verification Bar (Required by Falcon AI Assignment) -->
+    <section class="bg-indigo-50/80 border border-indigo-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-600 text-white">Spec Checklist</span>
+          <h2 class="text-sm font-semibold text-slate-900">One-Click Edge Case Verification</h2>
+        </div>
+        <p class="text-xs text-slate-600 mt-1">
+          Verify the mandatory scenarios from the job specification in one click: duplicate active timer prevention (HTTP 409) and empty report handling.
+        </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btnTestDuplicateTimer" type="button" class="text-xs font-medium px-3 py-2 rounded-lg bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm transition">
+          ⚡ Test: Duplicate Timer Start
+        </button>
+        <button id="btnTestEmptyReport" type="button" class="text-xs font-medium px-3 py-2 rounded-lg bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm transition">
+          📭 Test: Empty Report (Jan 2020)
+        </button>
+        <button id="btnResetDatesToCurrent" type="button" class="text-xs font-medium px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition">
+          📅 Show Current Period
+        </button>
+      </div>
+    </section>
+
+    <!-- Main Management Grid: 1) Employees & 2) Task Timers -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Employees Directory & Creation Form (5 cols) -->
+      <div class="lg:col-span-5 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div class="p-5 border-b border-slate-100">
+          <h2 class="text-base font-bold text-slate-900">1. Company Employees</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Add a new team member (use fictional names only)</p>
+        </div>
+
+        <form id="formAddEmployee" class="p-5 space-y-3 border-b border-slate-100 bg-slate-50/60">
+          <div>
+            <label for="inputEmpName" class="block text-xs font-medium text-slate-700 mb-1">Full Name *</label>
+            <input
+              id="inputEmpName"
+              type="text"
+              required
+              minlength="2"
+              maxlength="100"
+              placeholder="e.g., Jordan Taylor"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+            />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="inputEmpRole" class="block text-xs font-medium text-slate-700 mb-1">Role / Title</label>
+              <input
+                id="inputEmpRole"
+                type="text"
+                value="Python Developer"
+                maxlength="80"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              />
+            </div>
+            <div>
+              <label for="inputEmpDept" class="block text-xs font-medium text-slate-700 mb-1">Department</label>
+              <input
+                id="inputEmpDept"
+                type="text"
+                list="datalistDepartments"
+                value="Engineering"
+                maxlength="80"
+                placeholder="Select or type department"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              />
+              <datalist id="datalistDepartments">
+                <option value="Engineering"></option>
+                <option value="R&amp;D / AI"></option>
+                <option value="Quality Assurance"></option>
+                <option value="Product &amp; Design"></option>
+                <option value="Analytics"></option>
+              </datalist>
+            </div>
+          </div>
+          <button
+            id="btnSubmitEmployee"
+            type="submit"
+            class="w-full py-2 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm transition shadow-sm"
+          >
+            + Add Employee
+          </button>
+        </form>
+
+        <!-- Quick Department Filter for Employee Directory -->
+        <div class="px-4 pt-3 pb-2 border-b border-slate-100 flex items-center justify-between gap-2 bg-white">
+          <label for="selectEmpListDept" class="text-xs font-medium text-slate-500">Filter directory by department:</label>
+          <select
+            id="selectEmpListDept"
+            class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All Departments</option>
+          </select>
+        </div>
+
+        <div class="p-4 flex-1 overflow-y-auto max-h-80">
+          <div id="employeesListContainer" class="space-y-2.5"></div>
+        </div>
+      </div>
+
+      <!-- Right Column: Task Timer Controls & Active Sessions (7 cols) -->
+      <div class="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">2. Task Timer Control</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Select an employee, enter a task description, and start tracking time</p>
+          </div>
+          <span class="text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Persistent DB Storage
+          </span>
+        </div>
+
+        <form id="formStartTimer" class="p-5 space-y-4 border-b border-slate-100 bg-slate-50/60">
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div class="sm:col-span-5">
+              <label for="selectTimerEmployee" class="block text-xs font-medium text-slate-700 mb-1">Employee *</label>
+              <select
+                id="selectTimerEmployee"
+                required
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              ></select>
+            </div>
+            <div class="sm:col-span-7">
+              <label for="inputTaskDescription" class="block text-xs font-medium text-slate-700 mb-1">Task Description *</label>
+              <input
+                id="inputTaskDescription"
+                type="text"
+                required
+                minlength="2"
+                maxlength="300"
+                placeholder="e.g., Implement LLM API webhook integration"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              />
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-xs text-slate-500">
+              💡 Each employee can have at most 1 active timer running at a time.
+            </p>
+            <button
+              id="btnStartTimerSubmit"
+              type="submit"
+              class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition shadow-sm"
+            >
+              ▶ Start Timer
+            </button>
+          </div>
+        </form>
+
+        <!-- Currently Running Timers -->
+        <div class="p-5 flex-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Active Running Sessions</h3>
+              <span id="activeTimersSubCount" class="text-xs text-slate-400">0 active</span>
+            </div>
+            <div id="activeTimersContainer" class="space-y-3"></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Section 3: Reports, Department Filter & CSV Export -->
+    <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex flex-col gap-4 bg-slate-50/50">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">3. Time Reports, Department Filter &amp; CSV Export</h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Filter by date range, department, or employee and export ready-to-use CSV spreadsheets (Excel / Google Sheets)
+            </p>
+          </div>
+
+          <!-- CSV Export Buttons -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              id="btnExportCsvDetailed"
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition"
+            >
+              📥 Export CSV (Detailed Log)
+            </button>
+            <button
+              id="btnExportCsvSummary"
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-sm transition"
+            >
+              📊 Export CSV (Employee Summary)
+            </button>
+            <button
+              id="btnPreviewCsvModal"
+              type="button"
+              class="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-medium transition"
+            >
+              👁 Preview CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Report Filter Form (Date From, Date To, Department, Employee) -->
+        <form id="formFilterReport" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end pt-2 border-t border-slate-200/80">
+          <div class="lg:col-span-2">
+            <label for="filterDateFrom" class="block text-xs font-medium text-slate-600 mb-1">From Date</label>
+            <input
+              id="filterDateFrom"
+              type="date"
+              class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div class="lg:col-span-2">
+            <label for="filterDateTo" class="block text-xs font-medium text-slate-600 mb-1">To Date</label>
+            <input
+              id="filterDateTo"
+              type="date"
+              class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div class="lg:col-span-3">
+            <label for="filterDepartment" class="block text-xs font-medium text-slate-600 mb-1">Department</label>
+            <select
+              id="filterDepartment"
+              class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Departments</option>
+            </select>
+          </div>
+          <div class="lg:col-span-3">
+            <label for="filterEmployeeId" class="block text-xs font-medium text-slate-600 mb-1">Employee</label>
+            <select
+              id="filterEmployeeId"
+              class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Employees</option>
+            </select>
+          </div>
+          <div class="lg:col-span-2 flex items-center gap-2">
+            <button
+              id="btnApplyFilter"
+              type="submit"
+              class="flex-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-sm"
+            >
+              Apply Filter
+            </button>
+            <button
+              id="btnClearFilter"
+              type="button"
+              class="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-sm transition"
+            >
+              Clear
+            </button>
+          </div>
+        </form>
+
+        <!-- Quick Department Filter Pills -->
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <span class="text-xs font-medium text-slate-500">Quick Department Filter:</span>
+          <div id="departmentQuickPills" class="flex flex-wrap items-center gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- Per-Employee Summary Table -->
+      <div class="p-5 border-b border-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Total Time per Employee for Selected Period
+          </h3>
+          <span id="summaryDeptIndicator" class="text-xs font-medium text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+            Department: All Departments
+          </span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50">
+                <th class="py-2.5 px-3">Employee</th>
+                <th class="py-2.5 px-3">Role</th>
+                <th class="py-2.5 px-3">Department</th>
+                <th class="py-2.5 px-3 text-center">Status</th>
+                <th class="py-2.5 px-3 text-right">Entries in Period</th>
+                <th class="py-2.5 px-3 text-right">Total Time (HH:MM:SS)</th>
+              </tr>
+            </thead>
+            <tbody id="summaryTableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detailed Time Entries Log -->
+      <div class="p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Detailed Time Entries Log
+          </h3>
+          <span id="entriesCountBadge" class="text-xs font-medium text-slate-500">0 entries</span>
+        </div>
+
+        <!-- Empty Report State -->
+        <div id="emptyReportState" class="hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+          <div class="text-3xl mb-2">📭</div>
+          <h4 class="text-sm font-bold text-slate-800">No time entries found for the selected period</h4>
+          <p id="emptyReportSubtext" class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            Total logged time across all matching employees for this range is 00:00:00. Adjust the date/department filter or start a new timer.
+          </p>
+        </div>
+
+        <div id="entriesTableWrapper" class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase bg-slate-50">
+                <th class="py-2.5 px-3">ID</th>
+                <th class="py-2.5 px-3">Employee</th>
+                <th class="py-2.5 px-3">Department</th>
+                <th class="py-2.5 px-3">Task Description</th>
+                <th class="py-2.5 px-3">Started At (UTC)</th>
+                <th class="py-2.5 px-3">Ended At (UTC)</th>
+                <th class="py-2.5 px-3 text-right">Duration</th>
+                <th class="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="entriesTableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="bg-white border-t border-slate-200 mt-8 py-4">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+      <span>Employee Time Tracking Technical Assignment · Built with Python 3 + FastAPI</span>
+      <span>All employee names and task records are fictional</span>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // All data is persisted by the FastAPI backend.
+    const useRemoteBackend = true;
+    let tickIntervalId = null;
+
+    function formatHMS(totalSeconds) {
+      const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+    }
+
+    function formatReadableTimestamp(isoStr) {
+      if (!isoStr) return '—';
+      return isoStr.replace('T', ' ').replace('Z', ' UTC');
+    }
+
+    function showToast(title, message, type) {
+      const container = document.getElementById('toastContainer');
+      const card = document.getElementById('toastCard');
+      const icon = document.getElementById('toastIcon');
+      const titleEl = document.getElementById('toastTitle');
+      const msgEl = document.getElementById('toastMessage');
+
+      titleEl.textContent = title;
+      msgEl.textContent = message;
+
+      card.className = 'rounded-xl shadow-lg border px-4 py-3 flex items-start gap-3 ';
+      if (type === 'error') {
+        card.className += 'bg-red-50 border-red-200';
+        icon.textContent = '⚠️';
+      } else if (type === 'success') {
+        card.className += 'bg-emerald-50 border-emerald-200';
+        icon.textContent = '✅';
+      } else {
+        card.className += 'bg-white border-slate-200';
+        icon.textContent = 'ℹ️';
+      }
+
+      container.classList.remove('hidden');
+      if (window._toastTimer) clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        container.classList.add('hidden');
+      }, 5000);
+    }
+
+    async function requestApi(path, payload) {
+      const res = await fetch('/api/' + path, payload === undefined ? {} : {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const detail = Array.isArray(body.detail)
+          ? body.detail.map(item => item.msg).join('; ')
+          : body.detail;
+        const error = new Error(detail || `Server returned HTTP ${res.status}`);
+        error.status = res.status;
+        throw error;
+      }
+      return body;
+    }
+
+    async function detectBackend() {
+      const dot = document.getElementById('backendStatusDot');
+      const text = document.getElementById('backendStatusText');
+      try {
+        await requestApi('health');
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        text.textContent = 'Connected';
+      } catch (error) {
+        dot.className = 'w-2 h-2 rounded-full bg-red-400';
+        text.textContent = 'Server unavailable';
+        showToast('Connection error', 'Could not connect to the server. Reload to retry.', 'error');
+      }
+    }
+
+    function apiGetEmployees() { return requestApi('employees'); }
+    function apiCreateEmployee(fullName, role, department) {
+      return requestApi('employees', {
+        full_name: fullName.trim(), role: role.trim() || 'Software Engineer',
+        department: department.trim() || 'Engineering'
+      });
+    }
+    function apiStartTimer(employeeId, taskDescription) {
+      return requestApi('timers/start', {
+        employee_id: Number(employeeId), task_description: taskDescription.trim()
+      });
+    }
+    function apiStopTimer(entryId) { return requestApi(`timers/${Number(entryId)}/stop`, {}); }
+    function apiGetReport(dateFrom, dateTo, employeeId, department) {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (employeeId) params.set('employee_id', employeeId);
+      if (department) params.set('department', department);
+      return requestApi('reports/summary?' + params);
+    }
+
+    // =========================================================================
+    // CSV Generation & Download (with UTF-8 BOM for Microsoft Excel)
+    // =========================================================================
+
+    function escapeCsvCell(value) {
+      const str = String(value === null || value === undefined ? '' : value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+
+    function buildCsvString(report, mode) {
+      const rows = [];
+      if (mode === 'summary') {
+        rows.push([
+          'Employee ID',
+          'Employee Name',
+          'Role',
+          'Department',
+          'Timer Status',
+          'Entries Count',
+          'Total Seconds',
+          'Total Time (HH:MM:SS)'
+        ]);
+        (report.employees_summary || []).forEach(r => {
+          rows.push([
+            r.employee_id,
+            r.full_name,
+            r.role,
+            r.department,
+            r.has_active_timer ? 'Running' : 'Idle',
+            r.entries_count,
+            r.total_seconds,
+            r.formatted_total
+          ]);
+        });
+      } else {
+        rows.push([
+          'Entry ID',
+          'Employee ID',
+          'Employee Name',
+          'Role',
+          'Department',
+          'Task Description',
+          'Started At (UTC)',
+          'Ended At (UTC)',
+          'Duration (Seconds)',
+          'Duration (HH:MM:SS)',
+          'Status'
+        ]);
+        (report.entries || []).forEach(item => {
+          rows.push([
+            item.id,
+            item.employee_id,
+            item.employee_name,
+            item.employee_role,
+            item.employee_department || '',
+            item.task_description,
+            item.started_at,
+            item.ended_at || 'Running',
+            item.duration_seconds,
+            item.formatted_duration,
+            item.is_active ? 'Running' : 'Completed'
+          ]);
+        });
+      }
+      return rows.map(row => row.map(escapeCsvCell).join(',')).join('\r\n');
+    }
+
+    function triggerCsvDownload(csvText, filename) {
+      try {
+        const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+      } catch (e) {
+        // Fallback if sandbox blocks direct download
+      }
+    }
+
+    function openCsvPreviewModal(csvText, titleText, subtitleText) {
+      const modal = document.getElementById('csvPreviewModal');
+      document.getElementById('csvModalTitle').textContent = titleText;
+      document.getElementById('csvModalSubtitle').textContent = subtitleText;
+      document.getElementById('csvPreviewTextarea').value = csvText;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeCsvPreviewModal() {
+      const modal = document.getElementById('csvPreviewModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    async function handleExportCsv(mode, showModalImmediately) {
+      if (!currentReport) {
+        await refreshAllData();
+      }
+      const dateFrom = document.getElementById('filterDateFrom').value || 'all';
+      const dateTo = document.getElementById('filterDateTo').value || 'all';
+      const dept = document.getElementById('filterDepartment').value || 'all-depts';
+      const safeDept = dept.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      const prefix = mode === 'summary' ? 'time_report_summary' : 'time_report_detailed';
+      const filename = `${prefix}_${safeDept}_${dateFrom}_${dateTo}.csv`;
+
+      if (useRemoteBackend && !showModalImmediately) {
+        const params = new URLSearchParams();
+        const rawFrom = document.getElementById('filterDateFrom').value || '';
+        const rawTo = document.getElementById('filterDateTo').value || '';
+        const rawEmp = document.getElementById('filterEmployeeId').value || '';
+        const rawDept = document.getElementById('filterDepartment').value || '';
+        if (rawFrom) params.set('date_from', rawFrom);
+        if (rawTo) params.set('date_to', rawTo);
+        if (rawEmp) params.set('employee_id', rawEmp);
+        if (rawDept) params.set('department', rawDept);
+        params.set('mode', mode);
+
+        const exportUrl = [window.location.origin, 'api', 'reports', 'export.csv'].join('/') + '?' + params.toString();
+        const link = document.createElement('a');
+        link.href = exportUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('CSV Export Complete', `File '${filename}' generated via FastAPI /api/reports/export.csv.`, 'success');
+        return;
+      }
+
+      const csvText = buildCsvString(currentReport, mode);
+      triggerCsvDownload(csvText, filename);
+
+      const rowsCount = mode === 'summary'
+        ? (currentReport.employees_summary || []).length
+        : (currentReport.entries || []).length;
+
+      const labelMode = mode === 'summary' ? 'Employee Summary' : 'Detailed Time Log';
+      if (showModalImmediately) {
+        openCsvPreviewModal(
+          csvText,
+          `CSV Preview: ${labelMode} (${rowsCount} rows)`,
+          `File: ${filename} · Department: ${document.getElementById('filterDepartment').value || 'All Departments'}`
+        );
+      } else {
+        showToast(
+          'CSV Report Downloaded',
+          `Exported ${rowsCount} rows (${labelMode}). Click 'Preview CSV' to inspect or copy raw CSV text.`,
+          'success'
+        );
+      }
+    }
+
+    // =========================================================================
+    // DOM Rendering
+    // =========================================================================
+
+    let cachedEmployees = [];
+    let currentReport = null;
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function refreshAllData() {
+      try {
+        const dateFrom = document.getElementById('filterDateFrom').value || '';
+        const dateTo = document.getElementById('filterDateTo').value || '';
+        const empId = document.getElementById('filterEmployeeId').value || '';
+        const department = document.getElementById('filterDepartment').value || '';
+
+        cachedEmployees = await apiGetEmployees();
+        currentReport = await apiGetReport(dateFrom, dateTo, empId, department);
+
+        renderDepartmentControls(cachedEmployees, currentReport.available_departments);
+        renderEmployeeSelectors(cachedEmployees, department);
+        renderEmployeesList(cachedEmployees);
+        renderActiveTimers(cachedEmployees);
+        renderReportSection(currentReport);
+        return true;
+      } catch (err) {
+        showToast('Data Refresh Error', err.message || String(err), 'error');
+        return false;
+      }
+    }
+
+    function renderDepartmentControls(employees, reportDepartments) {
+      const deptSet = new Set(reportDepartments || []);
+      employees.forEach(e => {
+        if (e.department) deptSet.add(e.department);
+      });
+      const departments = Array.from(deptSet).sort();
+
+      document.getElementById('statDepartmentsCountLabel').textContent = `${departments.length} departments`;
+
+      // 1. Report department dropdown
+      const filterDeptSelect = document.getElementById('filterDepartment');
+      const prevReportDept = filterDeptSelect.value;
+      filterDeptSelect.innerHTML =
+        `<option value="">All Departments (${departments.length})</option>` +
+        departments.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+      if (prevReportDept && departments.includes(prevReportDept)) {
+        filterDeptSelect.value = prevReportDept;
+      }
+
+      // 2. Left column employee list department dropdown
+      const empListDeptSelect = document.getElementById('selectEmpListDept');
+      const prevEmpListDept = empListDeptSelect.value;
+      empListDeptSelect.innerHTML =
+        `<option value="">All Departments (${departments.length})</option>` +
+        departments.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+      if (prevEmpListDept && departments.includes(prevEmpListDept)) {
+        empListDeptSelect.value = prevEmpListDept;
+      }
+
+      // 3. Quick Department Filter Pills
+      const activeDept = filterDeptSelect.value;
+      const pillsContainer = document.getElementById('departmentQuickPills');
+      const allBtnClass = !activeDept
+        ? 'bg-indigo-600 text-white border-indigo-600 font-semibold'
+        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100';
+
+      let pillsHtml = `
+        <button type="button" data-dept-pill="" class="px-2.5 py-1 rounded-full text-xs border transition ${allBtnClass}">
+          All Departments
+        </button>
+      `;
+
+      pillsHtml += departments
+        .map(dept => {
+          const isSelected = activeDept === dept;
+          const cls = isSelected
+            ? 'bg-indigo-600 text-white border-indigo-600 font-semibold'
+            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100';
+          return `
+            <button type="button" data-dept-pill="${escapeHtml(dept)}" class="px-2.5 py-1 rounded-full text-xs border transition ${cls}">
+              ${escapeHtml(dept)}
+            </button>
+          `;
+        })
+        .join('');
+
+      pillsContainer.innerHTML = pillsHtml;
+      pillsContainer.querySelectorAll('[data-dept-pill]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const chosenDept = btn.getAttribute('data-dept-pill') || '';
+          document.getElementById('filterDepartment').value = chosenDept;
+          document.getElementById('filterEmployeeId').value = '';
+          await refreshAllData();
+        });
+      });
+    }
+
+    function renderEmployeeSelectors(employees, selectedDepartment) {
+      const timerSelect = document.getElementById('selectTimerEmployee');
+      const filterSelect = document.getElementById('filterEmployeeId');
+
+      const prevTimerVal = timerSelect.value;
+      const prevFilterVal = filterSelect.value;
+
+      timerSelect.innerHTML = employees
+        .map(emp => {
+          const statusSuffix = emp.active_timer ? ' (⏱ timer running)' : '';
+          return `<option value="${emp.id}">${escapeHtml(emp.full_name)} — ${escapeHtml(emp.department)}${statusSuffix}</option>`;
+        })
+        .join('');
+
+      if (prevTimerVal && employees.some(e => String(e.id) === String(prevTimerVal))) {
+        timerSelect.value = prevTimerVal;
+      }
+
+      const employeesForReportFilter = selectedDepartment
+        ? employees.filter(e => (e.department || '').toLowerCase() === selectedDepartment.toLowerCase())
+        : employees;
+
+      filterSelect.innerHTML =
+        `<option value="">All Employees (${employeesForReportFilter.length})</option>` +
+        employeesForReportFilter
+          .map(emp => `<option value="${emp.id}">${escapeHtml(emp.full_name)} (${escapeHtml(emp.department)})</option>`)
+          .join('');
+
+      if (prevFilterVal && employeesForReportFilter.some(e => String(e.id) === String(prevFilterVal))) {
+        filterSelect.value = prevFilterVal;
+      } else {
+        filterSelect.value = '';
+      }
+    }
+
+    function renderEmployeesList(employees) {
+      const container = document.getElementById('employeesListContainer');
+      document.getElementById('statEmployeesCount').textContent = String(employees.length);
+
+      const leftDeptFilter = document.getElementById('selectEmpListDept').value || '';
+      const visibleEmployees = leftDeptFilter
+        ? employees.filter(e => (e.department || '').toLowerCase() === leftDeptFilter.toLowerCase())
+        : employees;
+
+      if (visibleEmployees.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No employees found in this department.</p>`;
+        return;
+      }
+
+      container.innerHTML = visibleEmployees
+        .map(emp => {
+          const isRunning = Boolean(emp.active_timer);
+          const badgeHtml = isRunning
+            ? `<span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 live-dot"></span>Working
+               </span>`
+            : `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Idle</span>`;
+
+          return `
+            <div class="p-3 rounded-lg border border-slate-200 hover:border-slate-300 bg-white flex items-center justify-between gap-2 transition">
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-slate-900 truncate">${escapeHtml(emp.full_name)}</p>
+                <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  <span class="text-xs text-slate-500 truncate">${escapeHtml(emp.role)}</span>
+                  <span class="text-slate-300">·</span>
+                  <span class="text-[11px] font-medium px-2 py-0.2 rounded bg-slate-100 text-slate-700">${escapeHtml(emp.department)}</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                ${badgeHtml}
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    function renderActiveTimers(employees) {
+      const activeList = employees.filter(e => Boolean(e.active_timer));
+      document.getElementById('statActiveTimersCount').textContent = String(activeList.length);
+      document.getElementById('activeTimersSubCount').textContent = `${activeList.length} active`;
+
+      const container = document.getElementById('activeTimersContainer');
+      if (activeList.length === 0) {
+        container.innerHTML = `
+          <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
+            <p class="text-sm font-medium text-slate-700">No active timers currently running</p>
+            <p class="text-xs text-slate-500 mt-1">Select an employee above, enter a task description, and click "Start Timer".</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = activeList
+        .map(emp => {
+          const t = emp.active_timer;
+          return `
+            <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500 live-dot"></span>
+                  <span class="text-sm font-bold text-slate-900">${escapeHtml(emp.full_name)}</span>
+                  <span class="text-xs px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200">${escapeHtml(emp.department)}</span>
+                </div>
+                <p class="text-xs sm:text-sm text-slate-700 font-medium">Task: "${escapeHtml(t.task_description)}"</p>
+                <p class="text-xs text-slate-400">Started: ${escapeHtml(formatReadableTimestamp(t.started_at))}</p>
+              </div>
+              <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                <span
+                  data-live-started="${escapeHtml(t.started_at)}"
+                  class="text-lg font-bold text-emerald-700 mono-timer bg-white px-3 py-1 rounded-lg border border-emerald-200 shadow-sm"
+                >${escapeHtml(t.formatted_elapsed)}</span>
+                <button
+                  type="button"
+                  data-stop-entry-id="${t.entry_id}"
+                  class="btn-stop-timer px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition"
+                >
+                  ⏹ Stop Timer
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      container.querySelectorAll('.btn-stop-timer').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const entryId = btn.getAttribute('data-stop-entry-id');
+          await handleStopTimer(entryId);
+        });
+      });
+    }
+
+    function renderReportSection(report) {
+      document.getElementById('statPeriodEntries').textContent = String(report.total_entries);
+      document.getElementById('statGrandTotalTime').textContent = report.formatted_grand_total;
+      document.getElementById('entriesCountBadge').textContent = `${report.total_entries} entries`;
+
+      const deptLabel = report.department ? report.department : 'All Departments';
+      document.getElementById('statActiveDeptBadge').textContent = deptLabel;
+      document.getElementById('summaryDeptIndicator').textContent = `Department: ${deptLabel}`;
+
+      const rangeLabel =
+        report.date_from || report.date_to
+          ? `${report.date_from || '...'} to ${report.date_to || '...'}`
+          : 'all time';
+      document.getElementById('statPeriodRangeLabel').textContent = rangeLabel;
+
+      // 1. Per-employee summary table
+      const summaryBody = document.getElementById('summaryTableBody');
+      if (report.employees_summary.length === 0) {
+        summaryBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-4 px-3 text-center text-xs text-slate-400">No employees match the selected department filter</td>
+          </tr>
+        `;
+      } else {
+        summaryBody.innerHTML = report.employees_summary
+          .map(row => {
+            const statusBadge = row.has_active_timer
+              ? `<span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">⏱ Running</span>`
+              : `<span class="text-xs text-slate-400">Idle</span>`;
+
+            return `
+              <tr class="hover:bg-slate-50/80">
+                <td class="py-2.5 px-3 font-semibold text-slate-900">${escapeHtml(row.full_name)}</td>
+                <td class="py-2.5 px-3 text-slate-600 text-xs">${escapeHtml(row.role)}</td>
+                <td class="py-2.5 px-3">
+                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700">${escapeHtml(row.department)}</span>
+                </td>
+                <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+                <td class="py-2.5 px-3 text-right font-medium text-slate-700">${row.entries_count}</td>
+                <td class="py-2.5 px-3 text-right font-bold text-indigo-700 mono-timer">${escapeHtml(row.formatted_total)}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      // 2. Detailed entries table or Empty State
+      const emptyBox = document.getElementById('emptyReportState');
+      const tableWrapper = document.getElementById('entriesTableWrapper');
+      const entriesBody = document.getElementById('entriesTableBody');
+
+      if (report.entries.length === 0) {
+        emptyBox.classList.remove('hidden');
+        tableWrapper.classList.add('hidden');
+        document.getElementById('emptyReportSubtext').textContent =
+          `Period (${rangeLabel}), Department (${deptLabel}): 0 entries found. Employee totals are safely calculated as 00:00:00.`;
+        entriesBody.innerHTML = '';
+        return;
+      }
+
+      emptyBox.classList.add('hidden');
+      tableWrapper.classList.remove('hidden');
+
+      entriesBody.innerHTML = report.entries
+        .map(item => {
+          const endCell = item.is_active
+            ? `<span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">In Progress...</span>`
+            : `<span class="text-xs text-slate-600">${escapeHtml(formatReadableTimestamp(item.ended_at))}</span>`;
+
+          const durAttr = item.is_active ? `data-live-started="${escapeHtml(item.started_at)}"` : '';
+          const actionCell = item.is_active
+            ? `<button type="button" data-stop-entry-id="${item.id}" class="btn-stop-row text-xs font-semibold text-rose-600 hover:text-rose-800 underline">Stop</button>`
+            : `<span class="text-xs text-slate-400">Completed</span>`;
+
+          return `
+            <tr class="hover:bg-slate-50/80">
+              <td class="py-2.5 px-3 text-xs text-slate-400 font-mono">#${item.id}</td>
+              <td class="py-2.5 px-3 font-medium text-slate-900">${escapeHtml(item.employee_name)}</td>
+              <td class="py-2.5 px-3">
+                <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">${escapeHtml(item.employee_department || '')}</span>
+              </td>
+              <td class="py-2.5 px-3 text-slate-700">${escapeHtml(item.task_description)}</td>
+              <td class="py-2.5 px-3 text-xs text-slate-600">${escapeHtml(formatReadableTimestamp(item.started_at))}</td>
+              <td class="py-2.5 px-3">${endCell}</td>
+              <td class="py-2.5 px-3 text-right font-semibold mono-timer text-slate-900" ${durAttr}>${escapeHtml(item.formatted_duration)}</td>
+              <td class="py-2.5 px-3 text-right">${actionCell}</td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      entriesBody.querySelectorAll('.btn-stop-row').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const entryId = btn.getAttribute('data-stop-entry-id');
+          await handleStopTimer(entryId);
+        });
+      });
+    }
+
+    // Update live counters every second from server UTC started_at
+    function startLiveTicker() {
+      if (tickIntervalId) clearInterval(tickIntervalId);
+      tickIntervalId = setInterval(() => {
+        const nowMs = Date.now();
+        document.querySelectorAll('[data-live-started]').forEach(el => {
+          const startedIso = el.getAttribute('data-live-started');
+          if (startedIso) {
+            const elapsed = Math.max(0, Math.floor((nowMs - Date.parse(startedIso)) / 1000));
+            el.textContent = formatHMS(elapsed);
+          }
+        });
+      }, 1000);
+    }
+
+    async function handleStopTimer(entryId) {
+      try {
+        const stopped = await apiStopTimer(entryId);
+        showToast(
+          'Timer Stopped',
+          `Task "${stopped.task_description}" saved (${formatHMS(stopped.duration_seconds)}).`,
+          'success'
+        );
+        await refreshAllData();
+      } catch (err) {
+        showToast('Error Stopping Timer', err.message || String(err), 'error');
+      }
+    }
+
+    // =========================================================================
+    // Event Listeners
+    // =========================================================================
+
+    function setDefaultDateInputs() {
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      const toDateVal = (d) => d.toISOString().slice(0, 10);
+      document.getElementById('filterDateFrom').value = toDateVal(weekAgo);
+      document.getElementById('filterDateTo').value = toDateVal(now);
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('btnCloseToast').addEventListener('click', () => {
+        document.getElementById('toastContainer').classList.add('hidden');
+      });
+
+      document.getElementById('btnCloseCsvModal').addEventListener('click', closeCsvPreviewModal);
+      document.getElementById('btnCloseCsvModalFooter').addEventListener('click', closeCsvPreviewModal);
+
+      document.getElementById('btnCopyCsvContent').addEventListener('click', () => {
+        const textarea = document.getElementById('csvPreviewTextarea');
+        textarea.select();
+        try {
+          document.execCommand('copy');
+          showToast('Copied to Clipboard', 'CSV content copied. You can paste it directly into Excel or a file.', 'success');
+        } catch (err) {
+          showToast('Copy CSV', 'Select the text in the box and press Ctrl+C / Cmd+C.', 'info');
+        }
+      });
+
+      setDefaultDateInputs();
+      await detectBackend();
+      await refreshAllData();
+      startLiveTicker();
+
+      // 1. Add Employee Form
+      document.getElementById('formAddEmployee').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nameInput = document.getElementById('inputEmpName');
+        const roleInput = document.getElementById('inputEmpRole');
+        const deptInput = document.getElementById('inputEmpDept');
+
+        try {
+          const created = await apiCreateEmployee(nameInput.value, roleInput.value, deptInput.value);
+          nameInput.value = '';
+          showToast('Employee Added', `'${created.full_name}' (${created.department}) saved to database.`, 'success');
+          await refreshAllData();
+          document.getElementById('selectTimerEmployee').value = String(created.id);
+        } catch (err) {
+          showToast('Could Not Add Employee', err.message || String(err), 'error');
+        }
+      });
+
+      // Left column department filter
+      document.getElementById('selectEmpListDept').addEventListener('change', () => {
+        renderEmployeesList(cachedEmployees);
+      });
+
+      // 2. Start Timer Form
+      document.getElementById('formStartTimer').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const empSelect = document.getElementById('selectTimerEmployee');
+        const taskInput = document.getElementById('inputTaskDescription');
+
+        try {
+          await apiStartTimer(empSelect.value, taskInput.value);
+          showToast('Timer Started', `Tracking started for task "${taskInput.value.trim()}".`, 'success');
+          taskInput.value = '';
+          await refreshAllData();
+        } catch (err) {
+          showToast('Duplicate Timer Blocked', err.message || String(err), 'error');
+        }
+      });
+
+      // 3. Report Filter Form
+      document.getElementById('formFilterReport').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await refreshAllData();
+        showToast('Report Updated', 'Applied selected date range, department, and employee filters.', 'info');
+      });
+
+      document.getElementById('filterDepartment').addEventListener('change', async () => {
+        document.getElementById('filterEmployeeId').value = '';
+        await refreshAllData();
+      });
+
+      document.getElementById('filterEmployeeId').addEventListener('change', async () => {
+        await refreshAllData();
+      });
+
+      document.getElementById('btnClearFilter').addEventListener('click', async () => {
+        document.getElementById('filterDateFrom').value = '';
+        document.getElementById('filterDateTo').value = '';
+        document.getElementById('filterDepartment').value = '';
+        document.getElementById('filterEmployeeId').value = '';
+        await refreshAllData();
+        showToast('Filters Cleared', 'Showing all-time records across all departments and employees.', 'info');
+      });
+
+      // 4. CSV Export Buttons
+      document.getElementById('btnExportCsvDetailed').addEventListener('click', async () => {
+        await handleExportCsv('detailed', false);
+      });
+
+      document.getElementById('btnExportCsvSummary').addEventListener('click', async () => {
+        await handleExportCsv('summary', false);
+      });
+
+      document.getElementById('btnPreviewCsvModal').addEventListener('click', async () => {
+        await handleExportCsv('detailed', true);
+      });
+
+      // 5. One-Click Edge Case Test Buttons
+      document.getElementById('btnTestDuplicateTimer').addEventListener('click', async () => {
+        try {
+          if (cachedEmployees.length === 0) {
+            showToast('No Employees', 'Please add at least one employee first.', 'error');
+            return;
+          }
+          const targetEmp = cachedEmployees.find(e => e.active_timer) || cachedEmployees[0];
+          if (!targetEmp.active_timer) {
+            await apiStartTimer(targetEmp.id, 'Initial active task (testing duplicate guard)');
+            await refreshAllData();
+          }
+          await apiStartTimer(targetEmp.id, 'Attempted second concurrent timer');
+        } catch (err) {
+          showToast(err.status === 409 ? 'Duplicate Timer Guard Verified!' : 'Check failed', err.message || String(err), err.status === 409 ? 'success' : 'error');
+        }
+      });
+
+      document.getElementById('btnTestEmptyReport').addEventListener('click', async () => {
+        document.getElementById('filterDateFrom').value = '2020-01-01';
+        document.getElementById('filterDateTo').value = '2020-01-31';
+        document.getElementById('filterDepartment').value = '';
+        document.getElementById('filterEmployeeId').value = '';
+        const loaded = await refreshAllData();
+        if (!loaded || currentReport.total_entries !== 0 || currentReport.total_seconds !== 0) return;
+        showToast(
+          'Empty Report Scenario Verified!',
+          'Selected historical period (Jan 2020). Report safely returned 0 entries and 00:00:00.',
+          'success'
+        );
+      });
+
+      document.getElementById('btnResetDatesToCurrent').addEventListener('click', async () => {
+        setDefaultDateInputs();
+        document.getElementById('filterDepartment').value = '';
+        document.getElementById('filterEmployeeId').value = '';
+        await refreshAllData();
+        showToast('Current Period Restored', 'Showing records for the last 7 days across all departments.', 'info');
+      });
+
+      document.getElementById('btnResetDemo').addEventListener('click', async () => {
+        setDefaultDateInputs();
+        document.getElementById('filterDepartment').value = '';
+        document.getElementById('filterEmployeeId').value = '';
+        document.getElementById('selectEmpListDept').value = '';
+        await refreshAllData();
+        showToast('View Refreshed', 'Filters cleared and latest saved records loaded.', 'info');
+      });
+    });
+  </script>
+</body>
+</html>
