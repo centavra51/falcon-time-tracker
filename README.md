@@ -2,7 +2,13 @@
 
 Демо-приложение учёта рабочего времени для тестового задания Falcon: сотрудники, задачи, таймеры, отчёты и CSV.
 
+**Демо:** https://falcon-time-tracker.vercel.app/
+
+**API / Swagger:** https://falcon-time-tracker.vercel.app/docs
+
 **Репозиторий:** https://github.com/centavra51/falcon-time-tracker
+
+[![Integration tests](https://github.com/centavra51/falcon-time-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/centavra51/falcon-time-tracker/actions/workflows/tests.yml)
 
 ## 1. Возможности и архитектура
 
@@ -64,6 +70,8 @@ docker run --rm -p 8000:8000 -e TIME_TRACKER_DB=/data/time_tracker.db -v falcon-
 
 ### Vercel
 
+Зависимости для Vercel явно перечислены в `pyproject.toml`: при его наличии сборщик использует этот манифест. `requirements.txt` содержит те же проверенные версии для локального запуска.
+
 1. Импортировать этот GitHub-репозиторий в Vercel; Framework Preset: **FastAPI**, Root Directory: корень репозитория.
 2. Подключить отдельную PostgreSQL-базу, например Neon через Vercel Storage / Marketplace.
 3. Добавить секрет `DATABASE_URL` в переменные окружения проекта. Интеграция может добавить его автоматически. Строка подключения должна использовать TLS (`sslmode=require`).
@@ -109,6 +117,8 @@ docker run --rm -p 8000:8000 -e TIME_TRACKER_DB=/data/time_tracker.db -v falcon-
 ```bash
 python -m unittest test_app.py -v
 ```
+
+12 интеграционных тестов прошли локально на SQLite и в [GitHub Actions на SQLite и PostgreSQL](https://github.com/centavra51/falcon-time-tracker/actions/runs/40705408940).
 
 Набор проверяет создание сотрудников, старт/стоп, повторный старт, пустой период, сохранение при новом клиенте приложения, отделы, оба CSV-режима, кириллицу, точные границы дат, одновременный старт/стоп и некорректные запросы.
 
